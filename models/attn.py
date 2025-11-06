@@ -142,19 +142,29 @@ class ProbAttention(nn.Module):
 
         if self.mask_flag:
             attn_mask = ProbMask(B, H, L_Q, index, scores, device=V.device)
-            scores.masked_fill_(attn_mask.mask, -np.inf)
+            scores = scores.masked_fill(attn_mask.mask, -np.inf)  # 注意：这里也建议避免 in-place
 
-        attn = torch.softmax(scores, dim=-1) # nn.Softmax(dim=-1)(scores)
+        attn = torch.softmax(scores, dim=-1)
 
-        context_in[torch.arange(B)[:, None, None],
-                   torch.arange(H)[None, :, None],
-                   index, :] = torch.matmul(attn, V).type_as(context_in)
+        # 创建更新值
+        updated_values = torch.matmul(attn, V).type_as(context_in)  # [B, H, u, D]
+
+        # 克隆 context_in 避免 in-place 修改
+        context_new = context_in.clone()
+
+        # 执行索引赋值（现在是对 clone 后的张量操作，安全）
+        context_new[torch.arange(B)[:, None, None],
+        torch.arange(H)[None, :, None],
+        index, :] = updated_values
+
         if self.output_attention:
-            attns = (torch.ones([B, H, L_V, L_V])/L_V).type_as(attn).to(attn.device)
-            attns[torch.arange(B)[:, None, None], torch.arange(H)[None, :, None], index, :] = attn
-            return (context_in, attns)
+            attns = (torch.ones([B, H, L_V, L_V], device=V.device) / L_V).type_as(attn)
+            attns[torch.arange(B)[:, None, None],
+            torch.arange(H)[None, :, None],
+            index, :] = attn
+            return (context_new, attns)
         else:
-            return (context_in, None)
+            return (context_new, None)
 
     def forward(self, queries, keys, values, attn_mask):
         B, L_Q, H, D = queries.shape

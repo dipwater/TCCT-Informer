@@ -92,7 +92,7 @@ print('Args in experiment:')
 print(args)
 
 Exp = Exp_Informer
-
+torch.autograd.set_detect_anomaly(True)
 for ii in range(args.itr):
     # setting record of experiments
     setting = '{}_{}_ft{}_sl{}_ll{}_pl{}_dm{}_nh{}_el{}_dl{}_df{}_at{}_fc{}_eb{}_dt{}_csp{}_dilate{}_passthrough{}_{}_{}'.format(args.model, args.data, args.features,
