@@ -4,7 +4,9 @@ import torch.nn.functional as F
 
 import numpy as np
 
+import math
 from math import sqrt
+from math import log
 from utils.masking import TriangularCausalMask, ProbMask
 
 class FullAttention(nn.Module):
@@ -35,6 +37,63 @@ class FullAttention(nn.Module):
         else:
             return (V.contiguous(), None)
 
+class LogSparceAttention(nn.Module):
+    def __init__(self, mask_flag=True, factor=5, scale=None, attention_dropout=0.1, output_attention=False):
+        super(LogSparceAttention, self).__init__()
+        self.scale = scale
+        self.mask_flag = mask_flag
+        self.output_attention = output_attention
+        self.dropout = nn.Dropout(attention_dropout)
+
+    def log_mask(self, win_len, sub_len):
+        mask = torch.zeros((win_len, win_len), dtype=torch.float)
+        for i in range(win_len):
+            mask[i] = self.row_mask(i, sub_len, win_len)
+        return mask.view(1, 1, mask.size(0), mask.size(1))
+
+    def row_mask(self, index, sub_len, win_len):
+        log_l = math.ceil(np.log2(sub_len))
+
+        mask = torch.zeros((win_len), dtype=torch.float)
+        if((win_len // sub_len) * 2 * (log_l) > index):
+            mask[:(index + 1)] = 1
+        else:
+            while(index >= 0):
+                if((index - log_l + 1) < 0):
+                    mask[:index] = 1
+                    break
+                mask[index - log_l + 1:(index + 1)] = 1  # Local attention
+                for i in range(0, log_l):
+                    new_index = index - log_l + 1 - 2**i
+                    if((index - new_index) <= sub_len and new_index >= 0):
+                        mask[new_index] = 1
+                index -= sub_len
+        return mask
+
+    def forward(self, queries, keys, values, attn_mask):
+        B, L, H, E = queries.shape
+        _, S, _, D = values.shape
+        scale = self.scale or 1./sqrt(E)
+
+        scores = torch.einsum("blhe,bshe->bhls", queries, keys)
+        # if self.mask_flag:
+            # if attn_mask is None:
+            #     attn_mask = TriangularCausalMask(B, L, device=queries.device)
+            # scores.masked_fill_(attn_mask.mask, -np.inf)
+        mask = self.log_mask(L, S)
+        mask_tri = mask[:, :, :scores.size(-2), :scores.size(-1)]
+        scores = scores.to(queries.device)
+        mask_tri = mask_tri.to(queries.device)
+        scores = scores * mask_tri + -1e9 * (1 - mask_tri)
+
+        A = self.dropout(torch.softmax(scale * scores, dim=-1))
+        V = torch.einsum("bhls,bshd->blhd", A, values)
+
+        if self.output_attention:
+            return (V.contiguous(), A)
+        else:
+            return (V.contiguous(), None)
+
 class ProbAttention(nn.Module):
     def __init__(self, mask_flag=True, factor=5, scale=None, attention_dropout=0.1, output_attention=False):
         super(ProbAttention, self).__init__()
@@ -53,7 +112,7 @@ class ProbAttention(nn.Module):
         K_expand = K.unsqueeze(-3).expand(B, H, L_Q, L_K, E)
         index_sample = torch.randint(L_K, (L_Q, sample_k)) # real U = U_part(factor*ln(L_k))*L_q
         K_sample = K_expand[:, :, torch.arange(L_Q).unsqueeze(1), index_sample, :]
-        Q_K_sample = torch.matmul(Q.unsqueeze(-2), K_sample.transpose(-2, -1)).squeeze(-2)
+        Q_K_sample = torch.matmul(Q.unsqueeze(-2), K_sample.transpose(-2, -1)).squeeze()
 
         # find the Top_k query with sparisty measurement
         M = Q_K_sample.max(-1)[0] - torch.div(Q_K_sample.sum(-1), L_K)
@@ -122,12 +181,11 @@ class ProbAttention(nn.Module):
         # update the context with selected top_k queries
         context, attn = self._update_context(context, values, scores_top, index, L_Q, attn_mask)
         
-        return context.transpose(2,1).contiguous(), attn
-
+        return context.contiguous(), attn
 
 class AttentionLayer(nn.Module):
-    def __init__(self, attention, d_model, n_heads, 
-                 d_keys=None, d_values=None, mix=False):
+    def __init__(self, attention, d_model, n_heads, d_keys=None,
+                 d_values=None):
         super(AttentionLayer, self).__init__()
 
         d_keys = d_keys or (d_model//n_heads)
@@ -139,7 +197,6 @@ class AttentionLayer(nn.Module):
         self.value_projection = nn.Linear(d_model, d_values * n_heads)
         self.out_projection = nn.Linear(d_values * n_heads, d_model)
         self.n_heads = n_heads
-        self.mix = mix
 
     def forward(self, queries, keys, values, attn_mask):
         B, L, _ = queries.shape
@@ -156,8 +213,6 @@ class AttentionLayer(nn.Module):
             values,
             attn_mask
         )
-        if self.mix:
-            out = out.transpose(2,1).contiguous()
         out = out.view(B, L, -1)
 
         return self.out_projection(out), attn
