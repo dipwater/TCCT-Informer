@@ -6,7 +6,7 @@ import os
 # ----------------------------
 # 配置：修改为你自己的结果目录
 # ----------------------------
-result_dir = 'results/informer_ETTh1_ftM_sl96_ll48_pl24_dm512_nh8_el2_dl1_df2048_fc3_ebtimeF_dtTrue_Exp_0'
+result_dir = 'results/informer_Normal_ftMS_sl60_ll30_pl20_dm512_nh8_el2_dl1_df2048_atprob_fc5_ebtimeF_dtTrue_cspFalse_dilateFalse_passthroughFalse_Exp3_0'
 
 # 加载预测和真实值
 pred_data = np.load(os.path.join(result_dir, 'pred.npy'))  # shape: [N, pred_len, C]
@@ -18,16 +18,16 @@ print(f"真实形状: {true_data.shape}")
 # ----------------------------
 # 可视化设置
 # ----------------------------
-num_samples_to_plot = 5  # 绘制前5个样本
+num_samples_to_plot = 7  # 绘制前5个样本
 pred_len = pred_data.shape[1]  # 预测长度，如24
-channel_names = ['HUFL', 'HULL', 'MUFL', 'MULL', 'LUFL', 'LULL', 'OT']  # 根据你的数据修改
+channel_names = ['Motor Y Voltage']  # 根据你的数据修改
 
 # 创建时间轴（例如：未来24小时）
 time_steps = np.arange(pred_len)
 
 # 绘图
 n_vars = pred_data.shape[2]
-fig, axes = plt.subplots(n_vars, 1, figsize=(12, 2 * n_vars), sharex=True)
+fig, axes = plt.subplots(n_vars, 1, figsize=(6, 4), sharex=True)
 if n_vars == 1:
     axes = [axes]
 
@@ -46,5 +46,5 @@ for var_idx in range(n_vars):
 
 axes[-1].set_xlabel('Time Steps (Future)')
 plt.tight_layout()
-plt.savefig(os.path.join(result_dir, 'plots/prediction_visualization.png'), dpi=300)
+plt.savefig(os.path.join(result_dir, 'prediction_visualization.png'), dpi=300)
 plt.show()

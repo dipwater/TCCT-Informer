@@ -10,7 +10,7 @@ parser.add_argument('--model', type=str, required=True, default='informer',help=
 
 parser.add_argument('--data', type=str, required=True, default='ETTh1', help='data')
 parser.add_argument('--root_path', type=str, default='./data/ETT/', help='root path of the data file')
-parser.add_argument('--data_path', type=str, default='ETTh1.csv', help='data file')    
+parser.add_argument('--data_path', type=str, default='', help='data file')
 parser.add_argument('--features', type=str, default='M', help='forecasting task, options:[M, S, MS]; M:multivariate predict multivariate, S:univariate predict univariate, MS:multivariate predict univariate')
 parser.add_argument('--target', type=str, default='OT', help='target feature in S or MS task')
 parser.add_argument('--freq', type=str, default='h', help='freq for time features encoding, options:[s:secondly, t:minutely, h:hourly, d:daily, b:business days, w:weekly, m:monthly], you can also use more detailed freq like 15min or 3h')
@@ -77,10 +77,17 @@ data_parser = {
     'ETTh2':{'data':'ETTh2.csv','T':'OT','M':[7,7,7],'S':[1,1,1],'MS':[7,7,1]},
     'ETTm1':{'data':'ETTm1.csv','T':'OT','M':[7,7,7],'S':[1,1,1],'MS':[7,7,1]},
     'ETTm2':{'data':'ETTm2.csv','T':'OT','M':[7,7,7],'S':[1,1,1],'MS':[7,7,1]},
+    'Normal':{'data':'Normal_resampled.csv','T':'Motor Y Voltage','M':[7,7,7],'S':[1,1,1],'MS':[7,7,1]},
+    'Jam':{'data':'Jam_resampled.csv','T':'Motor Y Voltage','M':[7,7,7],'S':[1,1,1],'MS':[7,7,1]},
+    'Position':{'data':'Position_resampled.csv','T':'Motor Y Voltage','M':[7,7,7],'S':[1,1,1],'MS':[7,7,1]},
+    'Spall':{'data':'Spall_resampled.csv','T':'Motor Y Voltage','M':[7,7,7],'S':[1,1,1],'MS':[7,7,1]},
+    'FLEA':{'data':'Full_resampled.csv','T':'Motor Y Voltage','M':[7,7,7],'S':[1,1,1],'MS':[7,7,1]},
 }
 if args.data in data_parser.keys():
     data_info = data_parser[args.data]
-    args.data_path = data_info['data']
+    if args.data_path == '':
+        args.data_path = data_info['data']
+    print('Args.data_path is: {}'.format(args.data_path))
     args.target = data_info['T']
     args.enc_in, args.dec_in, args.c_out = data_info[args.features]
 
@@ -100,14 +107,15 @@ for ii in range(args.itr):
                 args.d_model, args.n_heads, args.e_layers, args.d_layers, args.d_ff, args.attn, args.factor, args.embed, args.distil, args.CSP, args.dilated, args.passthrough, args.des, ii)
 
     exp = Exp(args) # set experiments
-    print('>>>>>>>start training : {}>>>>>>>>>>>>>>>>>>>>>>>>>>'.format(setting))
-    exp.train(setting)
-    
-    print('>>>>>>>testing : {}<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<'.format(setting))
-    exp.test(setting)
 
     if args.do_predict:
         print('>>>>>>>predicting : {}<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<'.format(setting))
         exp.predict(setting, True)
+    else:
+        print('>>>>>>>start training : {}>>>>>>>>>>>>>>>>>>>>>>>>>>'.format(setting))
+        exp.train(setting)
+
+        print('>>>>>>>testing : {}<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<'.format(setting))
+        exp.test(setting)
 
     torch.cuda.empty_cache()
